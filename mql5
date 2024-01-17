@@ -1,0 +1,97 @@
+mql5
+//+------------------------------------------------------------------+
+//|                                                     Pending Scalper MT5|
+//|                                   Copyright © 2021, Forex Robot Easy Team|
+//|                                    https://www.forexroboteasy.com|
+//+------------------------------------------------------------------+
+
+// Expert Advisor input parameters
+input double LotSize = 0.01; // Initial lot size
+input double StopLoss = 50; // Stop loss in points
+input double TakeProfit = 100; // Take profit in points
+input int MaxOrders = 10; // Maximum number of pending orders
+input double PendingDistance = 10.0; // Distance from current price for pending orders
+input double Slippage = 3.0; // Maximum allowed slippage in points
+input int MagicNumber = 123456; // Unique identifier for the EA
+
+// Array of currency pair settings
+struct CurrencyPairSettings
+{
+    string PairName; // Name of the currency pair
+    double LotMultiplier; // Multiplier for lot size
+};
+
+// Define currency pair settings
+CurrencyPairSettings[] pairs;
+pairs[0].PairName = 'EURUSD';
+pairs[0].LotMultiplier = 1.0;
+pairs[1].PairName = 'GBPUSD';
+pairs[1].LotMultiplier = 0.8;
+pairs[2].PairName = 'USDJPY';
+pairs[2].LotMultiplier = 0.9;
+pairs[3].PairName = 'AUDUSD';
+pairs[3].LotMultiplier = 0.7;
+pairs[4].PairName = 'USDCHF';
+pairs[4].LotMultiplier = 0.6;
+pairs[5].PairName = 'USDCAD';
+pairs[5].LotMultiplier = 0.5;
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void OnTick()
+{
+    // Loop through each currency pair
+    for (int i = 0; i < ArraySize(pairs); i++)
+    {
+        // Check if the currency pair is enabled for trading
+        if (Symbol() == pairs[i].PairName)
+        {
+            // Calculate the lot size for the current currency pair
+            double lotSize = LotSize * pairs[i].LotMultiplier;
+
+            // Check if there are already pending orders for the currency pair
+            int pendingOrders = OrdersTotal(ORDER_TYPE_PENDING);
+            if (pendingOrders < MaxOrders)
+            {
+                // Calculate the pending order levels
+                double buyStopLevel = NormalizeDouble(SymbolInfoDouble(Symbol(), SYMBOL_ASK) + PendingDistance * SymbolInfoDouble(Symbol(), SYMBOL_POINT), Digits());
+                double sellStopLevel = NormalizeDouble(SymbolInfoDouble(Symbol(), SYMBOL_BID) - PendingDistance * SymbolInfoDouble(Symbol(), SYMBOL_POINT), Digits());
+
+                // Place pending orders
+                int ticket;
+                ticket = OrderSend(Symbol(), OP_BUYSTOP, lotSize, buyStopLevel, Slippage, 0, 0, '', MagicNumber);
+                if (ticket <= 0)
+                {
+                    Print('Error placing buy stop order: ', GetLastError());
+                }
+                ticket = OrderSend(Symbol(), OP_SELLSTOP, lotSize, sellStopLevel, Slippage, 0, 0, '', MagicNumber);
+                if (ticket <= 0)
+                {
+                    Print('Error placing sell stop order: ', GetLastError());
+                }
+            }
+        }
+    }
+}
+
+//+------------------------------------------------------------------+
+//|                                                                  |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+    // Close all pending orders upon EA deinitialization
+    for (int ticket = OrdersTotal() - 1; ticket >= 0; ticket--)
+    {
+        if (OrderSelect(ticket, SELECT_BY_POS, MODE_TRADES))
+        {
+            if (OrderType() == OP_BUYSTOP || OrderType() == OP_SELLSTOP)
+            {
+                if (OrderSymbol() == Symbol() && OrderMagicNumber() == MagicNumber)
+                {
+                    OrderClose(OrderTicket(), OrderLots(), OrderClosePrice(), Slippage, clrNone);
+                }
+            }
+        }
+    }
+}
